@@ -281,6 +281,7 @@ if __name__ == "__main__":
             "/[-1]",
             "/[-1]/y/[*]/aa",
             "/[*]/a/b/d",
+            "/a/b/d",
         ]
 
         # all these paths should exist
