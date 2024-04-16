@@ -12,9 +12,8 @@ PL_LINTERS="eradicate,mccabe,pycodestyle,pyflakes,pylint"
 # C0103 Variable name "%s" doesn't conform to snake_case naming style [pylint]
 # W0719 Raising too general exception: Exception [pylint]
 # W0718 Catching too general exception Exception [pylint]
-
-PL_IGNORE_LIST = "C901,C0114,C0115,C0116,C0301,C0114,C0115,C0116,C0301"
-PL_IGNORE="C0103,C0114,C0115,C0116,C0301,E203,C901,R0911,W0718,W0719"
+# R0915 Too many statements (51/50) [pylint]
+PL_IGNORE="C0103,C0114,C0115,C0116,C0301,E203,C901,R0911,W0718,W0719,R0915"
 
 PY_DIR = .
 WHAT = myPathExtract.py

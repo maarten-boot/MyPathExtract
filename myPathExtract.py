@@ -3,10 +3,8 @@ import re
 
 from typing import (
     Any,
-    # Dict,
     Tuple,
     List,
-    # Optional,
 )
 
 
@@ -31,11 +29,15 @@ class PathExtractor:
     def _validExtractorList(  # pylint: disable=too-many-branches
         self,
         pattern: str,
-    ) -> Tuple[bool, Tuple[str, List[int]] | None]:  # pylint: disable=R0911
-        if not (pattern.startswith("[") and pattern.endswith("]")):
-            return False, None
+    ) -> Tuple[bool, Tuple[str, List[int]]]:  # pylint: disable=R0911
         _s = "_validExtractorList::match: {pattern} to {r}"
         intList: List[int] = []
+
+        if not (pattern.startswith("[") and pattern.endswith("]")):
+            r = False, ("", intList)
+            if self.verbose:
+                print(_s.format(pattern=pattern, r=r), file=sys.stderr)
+            return r
 
         if pattern in ["[*]"]:
             r = True, ("all", intList)
@@ -142,22 +144,29 @@ class PathExtractor:
         rest: List[str],
         data: Any,
     ) -> None:
+        if self.verbose:
+            print("_doExtractDictOne", first, rest, data, file=sys.stderr)
+
         try:
             result = data[first]
         except KeyError as e:
-            _ = e
+            if self.verbose:
+                print(first, rest, data, e, file=sys.stderr)
             return
         except IndexError as e:
-            _ = e
+            if self.verbose:
+                print(first, rest, data, e, file=sys.stderr)
+            return
+        except TypeError as e:  # we are indexing a list with a string
+            if self.verbose:
+                print(first, rest, data, e, file=sys.stderr)
             return
 
-        if result is None:
-            self.resultList.append((self.getCurrentPath(), None))
+        if len(rest) == 0:  # we have reached the end of the path list, so book the result and return
+            self.resultList.append((self.getCurrentPath(), result))
             return
 
-        if len(rest) == 0:  # we have reached the end of the path list
-            return
-
+        # otherwise continue looking along the path for data
         self._doFirstPathData(rest, result)
 
     def _doFirstPathData(
@@ -165,14 +174,15 @@ class PathExtractor:
         pList: List[str],
         data: Any,
     ) -> None:
-        if self.verbose:
-            print("_doFirstPathData", pList, data, file=sys.stderr)
-
         first = pList[0]
         rest = pList[1:]
 
+        if self.verbose:
+            print("_doFirstPathData", pList, first, rest, data, file=sys.stderr)
+
         isList, hints = self._validExtractorList(first)  # should we extract a list [?]
-        if isList is not None and hints is not None:
+
+        if isList is True:
             if hints[0] == "all":  # we process all items of the list
                 self._doExtractListAll(
                     rest,
@@ -225,6 +235,7 @@ class PathExtractor:
 if __name__ == "__main__":
 
     def main() -> None:
+        verbose = True
         verbose = False
         fatal = True
 
@@ -263,11 +274,13 @@ if __name__ == "__main__":
             "/[*]/x/[*]/[*]",
             "/[*]/d",
             "/[*]/y/[*]/aa",
+            "/[*]/y/[*]",
             "/[*]/a/b",
             "/[0]/a/b",
             "/[2]",
             "/[-1]",
             "/[-1]/y/[*]/aa",
+            "/[*]/a/b/d",
         ]
 
         # all these paths should exist
@@ -275,10 +288,5 @@ if __name__ == "__main__":
             r = pe.extractAllWithPath(path)
             print(f"with path: {path}; we get result: {r}")
             # sys.exit(0)
-
-        if fatal is False:
-            path = "/[*]/a/b/d"  # with the default (fatal: True),  we treat non existant path's as fatal error
-            r = pe.extractAllWithPath(path)
-            print(r)
 
     main()
