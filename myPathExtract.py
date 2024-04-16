@@ -10,16 +10,23 @@ from typing import (
 )
 
 
-class MyPathExtract:  # pylint: disable=too-few-public-methods
+class PathExtractor:
     def __init__(
         self,
-        data: Any,
-        verbose: bool = False,  # be happy/chatty in your work
-        fatal: bool = True,  # treat any path failure as fatal and raise a exception
+        verbose: bool = False,
+        fatal: bool = True,
     ) -> None:
+        self.data: Any = None
         self.verbose = verbose
-        self.data = data
         self.fatal = fatal
+        self.currentPath: list[str] = []
+        self.resultList: List[Tuple[str, Any]] = []  # the result as list of tuple: (path, data)
+
+    def setData(self, data: Any) -> None:
+        self.data = data
+
+    def getCurrentPath(self) -> str:
+        return "/" + "/".join(self.currentPath)
 
     def _validExtractorList(  # pylint: disable=too-many-branches
         self,
@@ -91,119 +98,134 @@ class MyPathExtract:  # pylint: disable=too-few-public-methods
 
     def _doExtractListAll(
         self,
-        first: str,
         rest: List[str],
         data: Any,
-    ) -> Tuple[str, Any]:
-        result: List[Any] = []
+    ) -> None:
         n = 0
         for item in data:
             path = f"[{n}]"
-            if len(rest) == 0:
-                result.append((path, item))
+            self.currentPath.append(path)
+            if len(rest) > 0:
+                self._doFirstPathData(rest, item)
             else:
-                (r1, r2) = self._doFirstPathData(rest, item)
-                result.append((path, (r1, r2)))
+                self.resultList.append((self.getCurrentPath(), item))
             n += 1
-        return (first, result)
+            self.currentPath.pop()
 
     def _doExtractListOne(
         self,
         hints: Tuple[str, List[int]],
-        first: str,
         rest: List[str],
         data: Any,
-    ) -> Tuple[str, Any]:
+    ) -> None:
         what = hints[1][0]
         # lets see if the specified element exists
         try:
-            r = data[what]
+            result = data[what]
         except IndexError as e:
             if self.fatal:
                 raise Exception(f"Fatal: data[{what}]) with data: {data}; {e}") from e
-            r = None
+            result = None
+
+        if result is None:
+            self.resultList.append((self.getCurrentPath(), result))
+            return
 
         if len(rest) == 0:
-            return (first, r)
-        if r is None:
-            return (first, r)
+            return
 
-        return (first, self._doFirstPathData(rest, r))
+        self._doFirstPathData(rest, result)
 
     def _doExtractDictOne(
         self,
         first: str,
         rest: List[str],
         data: Any,
-    ) -> Tuple[str, Any]:
+    ) -> None:
         try:
-            r = data.get(first)
-        except Exception as e:
-            if self.fatal:
-                raise Exception(f"Fatal: get({first}) fails on data; {e}") from e
-            if self.verbose:
-                print(f"Err: get({first}) -> {e}; returning None", file=sys.stderr)
+            result = data[first]
+        except KeyError as e:
+            _ = e
+            return
+        except IndexError as e:
+            _ = e
+            return
 
-            return (first, None)
-
-        if r is None:
-            return (first, None)
+        if result is None:
+            self.resultList.append((self.getCurrentPath(), None))
+            return
 
         if len(rest) == 0:  # we have reached the end of the path list
-            return (first, r)
+            return
 
-        return (first, self._doFirstPathData(rest, r))
+        self._doFirstPathData(rest, result)
 
     def _doFirstPathData(
         self,
         pList: List[str],
         data: Any,
-    ) -> Any:
+    ) -> None:
         if self.verbose:
             print("_doFirstPathData", pList, data, file=sys.stderr)
 
         first = pList[0]
         rest = pList[1:]
 
-        isList, hints = self._validExtractorList(first)
+        isList, hints = self._validExtractorList(first)  # should we extract a list [?]
         if isList is not None and hints is not None:
             if hints[0] == "all":  # we process all items of the list
-                return self._doExtractListAll(
-                    first,
+                self._doExtractListAll(
                     rest,
                     data,
                 )
-            if hints[0] == "one":
-                return self._doExtractListOne(
-                    hints,
-                    first,
-                    rest,
-                    data,
-                )
+                return
 
-        return self._doExtractDictOne(
+            if hints[0] == "one":
+                self.currentPath.append(first)
+                self._doExtractListOne(
+                    hints,
+                    rest,
+                    data,
+                )
+                self.currentPath.pop()
+                return
+
+        self.currentPath.append(first)
+        self._doExtractDictOne(
             first,
             rest,
             data,
         )
+        self.currentPath.pop()
 
-    def getPath(
-        self,
-        path: str,
-    ) -> Any | None:
+    def extractAllWithPath(self, path: str) -> List[Tuple[str, Any]]:
         if not path.startswith("/"):
-            return None
+            if self.fatal:
+                raise Exception(f"Fatal: missing start '/' on path {path}")
+            return []
 
-        pList = path.split("/")
-        d: Any = self.data
-        result: Any = self._doFirstPathData(pList[1:], d)
-        return result
+        if self.verbose:
+            print(f"extractAllWithPath({path})", file=sys.stderr)
+
+        # prepare
+        self.currentPath = []
+        self.resultList = []
+        pList = path.split("/")[1:]  # the current request path as list at this level
+        data: Any = self.data  # the data at this level
+
+        self._doFirstPathData(
+            pList,
+            data,
+        )
+
+        # process the result for data-path and data
+        return self.resultList
 
 
 if __name__ == "__main__":
 
     def main() -> None:
-        verbose = True
+        verbose = False
         fatal = True
 
         data = [
@@ -232,11 +254,8 @@ if __name__ == "__main__":
             },
         ]
 
-        mpe = MyPathExtract(
-            data=data,
-            verbose=verbose,
-            fatal=fatal,
-        )
+        pe = PathExtractor(verbose=verbose, fatal=fatal)
+        pe.setData(data)
 
         pathList = [
             "/[*]/a/b/[*]",
@@ -253,12 +272,13 @@ if __name__ == "__main__":
 
         # all these paths should exist
         for path in pathList:
-            r = mpe.getPath(path)
-            print(r)
+            r = pe.extractAllWithPath(path)
+            print(f"with path: {path}; we get result: {r}")
+            # sys.exit(0)
 
         if fatal is False:
             path = "/[*]/a/b/d"  # with the default (fatal: True),  we treat non existant path's as fatal error
-            r = mpe.getPath(path)
+            r = pe.extractAllWithPath(path)
             print(r)
 
     main()
